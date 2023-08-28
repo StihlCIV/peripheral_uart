@@ -59,7 +59,8 @@ static K_SEM_DEFINE(ble_init_ok, 0, 1);
 static struct bt_conn *current_conn;
 static struct bt_conn *auth_conn;
 
-static const struct device *uart = DEVICE_DT_GET(DT_CHOSEN(nordic_nus_uart));
+// static const struct device *uart = DEVICE_DT_GET(DT_CHOSEN(nordic_nus_uart));
+static const struct device *uart = DEVICE_DT_GET(DT_NODELABEL(uart1));
 static struct k_work_delayable uart_work;
 
 struct uart_data_t {
