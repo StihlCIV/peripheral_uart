@@ -50,7 +50,8 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define KEY_PASSKEY_ACCEPT DK_BTN1_MSK
 #define KEY_PASSKEY_REJECT DK_BTN2_MSK
 
-#define UART_BUF_SIZE CONFIG_BT_NUS_UART_BUFFER_SIZE
+// #define UART_BUF_SIZE 
+#define UART_BUF_SIZE 40
 #define UART_WAIT_FOR_BUF_DELAY K_MSEC(50)
 #define UART_WAIT_FOR_RX CONFIG_BT_NUS_UART_RX_WAIT_TIME
 
@@ -68,7 +69,12 @@ struct uart_data_t {
 	uint8_t data[UART_BUF_SIZE];
 	uint16_t len;
 };
+struct my_uart_data {
+	uint8_t data[UART_BUF_SIZE];
+	uint8_t len;
+};
 
+static struct my_uart_data myBuffer;
 static K_FIFO_DEFINE(fifo_uart_tx_data);
 static K_FIFO_DEFINE(fifo_uart_rx_data);
 
@@ -98,7 +104,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 
 	switch (evt->type) {
 	case UART_TX_DONE:
-		LOG_DBG("UART_TX_DONE");
+		printk("\nUART_TX_DONE");
 		if ((evt->data.tx.len == 0) ||
 		    (!evt->data.tx.buf)) {
 			return;
@@ -122,73 +128,81 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		}
 
 		if (uart_tx(uart, buf->data, buf->len, SYS_FOREVER_MS)) {
-			LOG_WRN("Failed to send data over UART");
+			printk("\nFailed to send data over UART");
 		}
 
 		break;
 
 	case UART_RX_RDY:
-		LOG_DBG("UART_RX_RDY");
+		printk("\nreceived from Binterm, transmitted to BLE, Len: %d, Offset: %d \n", evt->data.rx.len, evt->data.rx.offset);
 		buf = CONTAINER_OF(evt->data.rx.buf, struct uart_data_t, data);
-		buf->len += evt->data.rx.len;
+		// buf = &(evt->data.rx.buf);
+		// if (disable_req) {
+		// 	return;
+		// }
 
-		if (disable_req) {
-			return;
-		}
-
-		if ((evt->data.rx.buf[buf->len - 1] == '\n') ||
-		    (evt->data.rx.buf[buf->len - 1] == '\r')) {
-			disable_req = true;
-			uart_rx_disable(uart);
-		}
-
+		// if ((evt->data.rx.buf[buf->len - 1] == '\n') ||
+		//     (evt->data.rx.buf[buf->len - 1] == '\r')) {
+		// 	disable_req = true;
+		// 	uart_rx_disable(uart);
+		// }
+		printk("\nUART_RX_RDY");
+		myBuffer.len = evt->data.rx.len;
+		memcpy(myBuffer.data, evt->data.rx.buf,myBuffer.len);
+		uint8_t i=0;
+	while (i <myBuffer.len )
+	{
+		/* code */
+		printk(" %d", myBuffer.data[i++]);
+	}
+	
+		uart_rx_disable(uart);
 		break;
 
-	case UART_RX_DISABLED:
-		LOG_DBG("UART_RX_DISABLED");
+	case UART_RX_DISABLED: // to handle the received data. 
+		printk("\nUART_RX_DISABLED");
 		disable_req = false;
-
+		printk("\ndd from Binterm, transmitted to BLE, Len: %d, Offset: %d \n", evt->data.rx.len, evt->data.rx.offset);
+		
 		buf = k_malloc(sizeof(*buf));
 		if (buf) {
 			buf->len = 0;
 		} else {
-			LOG_WRN("Not able to allocate UART receive buffer");
+			printk("\nNot able to allocate UART receive buffer");
 			k_work_reschedule(&uart_work, UART_WAIT_FOR_BUF_DELAY);
 			return;
 		}
+		printk("\ndd from Binterm, transmitted to BLE, Len: %d, Offset: %d \n", evt->data.rx.len, evt->data.rx.offset);
 
-		uart_rx_enable(uart, buf->data, sizeof(buf->data),
-			       UART_WAIT_FOR_RX);
+		uart_rx_enable(uart, buf->data, sizeof(buf->data), UART_WAIT_FOR_RX);
 
 		break;
 
 	case UART_RX_BUF_REQUEST:
-		LOG_DBG("UART_RX_BUF_REQUEST");
+		printk("\nUART_RX_BUF_REQUEST");
 		buf = k_malloc(sizeof(*buf));
 		if (buf) {
 			buf->len = 0;
 			uart_rx_buf_rsp(uart, buf->data, sizeof(buf->data));
 		} else {
-			LOG_WRN("Not able to allocate UART receive buffer");
+			printk("\nNot able to allocate UART receive buffer");
 		}
 
 		break;
 
 	case UART_RX_BUF_RELEASED:
-		LOG_DBG("UART_RX_BUF_RELEASED");
+		printk("\nUART_RX_BUF_RELEASED");
 		buf = CONTAINER_OF(evt->data.rx_buf.buf, struct uart_data_t,
 				   data);
-
 		if (buf->len > 0) {
 			k_fifo_put(&fifo_uart_rx_data, buf);
 		} else {
 			k_free(buf);
 		}
-
-		break;
+break;
 
 	case UART_TX_ABORTED:
-		LOG_DBG("UART_TX_ABORTED");
+		printk("\nUART_TX_ABORTED");
 		if (!aborted_buf) {
 			aborted_buf = (uint8_t *)evt->data.tx.buf;
 		}
@@ -215,7 +229,7 @@ static void uart_work_handler(struct k_work *item)
 	if (buf) {
 		buf->len = 0;
 	} else {
-		LOG_WRN("Not able to allocate UART receive buffer");
+		printk("\nNot able to allocate UART receive buffer");
 		k_work_reschedule(&uart_work, UART_WAIT_FOR_BUF_DELAY);
 		return;
 	}
@@ -245,7 +259,7 @@ static int uart_init(void)
 	if (IS_ENABLED(CONFIG_USB_DEVICE_STACK)) {
 		err = usb_enable(NULL);
 		if (err && (err != -EALREADY)) {
-			LOG_ERR("Failed to enable USB");
+			printk("\nFailed to enable USB");
 			return err;
 		}
 	}
@@ -269,12 +283,12 @@ static int uart_init(void)
 	err = uart_callback_set(uart, uart_cb, NULL);
 	if (err) {
 		k_free(rx);
-		LOG_ERR("Cannot initialize UART callback");
+		printk("\nCannot initialize UART callback");
 		return err;
 	}
 
 	if (IS_ENABLED(CONFIG_UART_LINE_CTRL)) {
-		LOG_INF("Wait for DTR");
+		printk("\nWait for DTR");
 		while (true) {
 			uint32_t dtr = 0;
 
@@ -285,14 +299,14 @@ static int uart_init(void)
 			/* Give CPU resources to low priority threads. */
 			k_sleep(K_MSEC(100));
 		}
-		LOG_INF("DTR set");
+		printk("\nDTR set");
 		err = uart_line_ctrl_set(uart, UART_LINE_CTRL_DCD, 1);
 		if (err) {
-			LOG_WRN("Failed to set DCD, ret code %d", err);
+			printk("\nFailed to set DCD, ret code %d", err);
 		}
 		err = uart_line_ctrl_set(uart, UART_LINE_CTRL_DSR, 1);
 		if (err) {
-			LOG_WRN("Failed to set DSR, ret code %d", err);
+			printk("\nFailed to set DSR, ret code %d", err);
 		}
 	}
 
@@ -305,7 +319,7 @@ static int uart_init(void)
 		if ((pos < 0) || (pos >= sizeof(tx->data))) {
 			k_free(rx);
 			k_free(tx);
-			LOG_ERR("snprintf returned %d", pos);
+			printk("\nsnprintf returned %d", pos);
 			return -ENOMEM;
 		}
 
@@ -325,7 +339,7 @@ static int uart_init(void)
 
 	err = uart_rx_enable(uart, rx->data, sizeof(rx->data), 50);
 	if (err) {
-		LOG_ERR("Cannot enable uart reception (err: %d)", err);
+		printk("\nCannot enable uart reception (err: %d)", err);
 		/* Free the rx buffer only because the tx buffer will be handled in the callback */
 		k_free(rx);
 	}
@@ -338,12 +352,12 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	char addr[BT_ADDR_LE_STR_LEN];
 
 	if (err) {
-		LOG_ERR("Connection failed (err %u)", err);
+		printk("\nConnection failed (err %u)", err);
 		return;
 	}
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-	LOG_INF("Connected %s", addr);
+	printk("\nConnected %s", addr);
 
 	current_conn = bt_conn_ref(conn);
 
@@ -356,7 +370,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
-	LOG_INF("Disconnected: %s (reason %u)", addr, reason);
+	printk("\nDisconnected: %s (reason %u)", addr, reason);
 
 	if (auth_conn) {
 		bt_conn_unref(auth_conn);
@@ -586,13 +600,13 @@ int main(void)
 	if (IS_ENABLED(CONFIG_BT_NUS_SECURITY_ENABLED)) {
 		err = bt_conn_auth_cb_register(&conn_auth_callbacks);
 		if (err) {
-			printk("Failed to register authorization callbacks.\n");
+			printk("\nFailed to register authorization callbacks.\n");
 			return 0;
 		}
 
 		err = bt_conn_auth_info_cb_register(&conn_auth_info_callbacks);
 		if (err) {
-			printk("Failed to register authorization info callbacks.\n");
+			printk("\nFailed to register authorization info callbacks.\n");
 			return 0;
 		}
 	}
